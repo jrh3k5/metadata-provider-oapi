@@ -1,0 +1,1347 @@
+openapi: 3.1.0
+info:
+  title: Plex Metadata Provider API
+  summary: API contract implemented by Plex-compatible custom metadata providers.
+  description: |
+    Plex Media Server can delegate movie and TV-show metadata (music is not
+    currently supported) to custom metadata providers. A provider describes
+    itself at its root endpoint (`GET /`) with a `MediaProvider` object. That
+    object advertises the metadata types the provider supports and a `Feature`
+    array whose `key` values define the actual endpoint paths for the
+    `metadata` and `match` features.
+
+    The paths in this specification use the common paths shown in the Plex
+    documentation (`/library/metadata` for `metadata` and
+    `/library/metadata/matches` for `match`). A client must use the paths
+    advertised by the provider's `Feature` entries rather than hard-coding
+    these defaults.
+
+    Responses are JSON when requested with `Accept: application/json`. PMS
+    defaults to XML, but JSON is preferred for new applications and is the
+    format described here. `X-Plex-` headers may also be supplied as query
+    string parameters.
+  version: 1.0.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+externalDocs:
+  description: Plex Media Server documentation - Metadata Providers
+  url: https://developer.plex.tv/pms/#section/API-Info/Metadata-Providers
+servers:
+  - url: http://localhost
+    description: Example local provider base URL; replace with the provider's actual base URL.
+tags:
+  - name: Provider
+    description: Discovery of a metadata provider's capabilities and feature paths.
+  - name: Metadata
+    description: Retrieval of metadata, child items, and image assets.
+  - name: Match
+    description: Matching local media to metadata in the provider's catalog.
+paths:
+  /:
+    get:
+      tags:
+        - Provider
+      operationId: getMediaProvider
+      summary: Get the provider description
+      description: |
+        Returns the root `MediaProvider` object. Its `identifier`, `Types`, and
+        `Feature` values tell Plex which metadata types are supported and where
+        the metadata and match endpoints can be found.
+      responses:
+        '200':
+          description: The provider description.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaProviderResponse'
+              examples:
+                tvShowProvider:
+                  summary: TV show provider supporting shows, seasons, and episodes
+                  value:
+                    MediaProvider:
+                      identifier: tv.plex.agents.custom.johnz.tmdb
+                      title: John Z's TV Show Provider
+                      version: '1.0.0'
+                      Types:
+                        - type: 2
+                          Scheme:
+                            - scheme: tv.plex.agents.custom.johnz.tmdb
+                        - type: 3
+                          Scheme:
+                            - scheme: tv.plex.agents.custom.johnz.tmdb
+                        - type: 4
+                          Scheme:
+                            - scheme: tv.plex.agents.custom.johnz.tmdb
+                      Feature:
+                        - type: metadata
+                          key: /library/metadata
+                        - type: match
+                          key: /library/metadata/matches
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /library/metadata/{ratingKey}:
+    get:
+      tags:
+        - Metadata
+      operationId: getMetadata
+      summary: Get metadata for an item
+      description: |
+        Retrieves a single metadata object by its `ratingKey` from the path
+        advertised by the `metadata` feature. A show or season must also return
+        a `Children` object when `includeChildren=1` is requested. A response
+        for a rating key the provider does not know must be a `404`.
+      parameters:
+        - $ref: '#/components/parameters/RatingKey'
+        - $ref: '#/components/parameters/Language'
+        - $ref: '#/components/parameters/LanguageQuery'
+        - $ref: '#/components/parameters/Country'
+        - $ref: '#/components/parameters/CountryQuery'
+        - $ref: '#/components/parameters/IncludeChildren'
+        - $ref: '#/components/parameters/EpisodeOrder'
+        - $ref: '#/components/parameters/IncludeFields'
+        - $ref: '#/components/parameters/ExcludeFields'
+        - $ref: '#/components/parameters/IncludeElements'
+        - $ref: '#/components/parameters/ExcludeElements'
+        - $ref: '#/components/parameters/IncludeOptionalFields'
+        - $ref: '#/components/parameters/IncludeOptionalElements'
+      responses:
+        '200':
+          description: A metadata container with one metadata item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataResponse'
+              examples:
+                movie:
+                  summary: Movie metadata
+                  value:
+                    MediaContainer:
+                      offset: 0
+                      totalSize: 1
+                      identifier: tv.plex.provider.metadata
+                      size: 1
+                      Metadata:
+                        - ratingKey: 5d7768244de0ee001fcc7fed
+                          key: /library/metadata/5d7768244de0ee001fcc7fed
+                          guid: plex://movie/5d7768244de0ee001fcc7fed
+                          type: movie
+                          title: Back to the Future
+                          originallyAvailableAt: '1985-07-03'
+                          year: 1985
+                          duration: 6960000
+                          contentRating: PG
+                          thumb: https://metadata-static.plex.tv/9/gracenote/9cf50a3c04a44ff7d53e1134222e3929.jpg
+                          art: https://metadata-static.plex.tv/d/gracenote/dc6be8ceb098b8e14a708786ea071c6e.jpg
+                          studio: Universal Pictures
+                          tagline: He was never in time for his classes...
+                          summary: Marty McFly, a typical American teenager of the Eighties, is accidentally sent back to 1955.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /library/metadata/{ratingKey}/children:
+    get:
+      tags:
+        - Metadata
+      operationId: getMetadataChildren
+      summary: Get the children of a metadata item
+      description: |
+        Returns the direct children of a show (seasons) or a season (episodes)
+        as a metadata container. This endpoint must support paging through the
+        `X-Plex-Container-Start` and `X-Plex-Container-Size` headers or query
+        parameters. When no paging information is supplied, the provider
+        should return at most the first 20 items.
+      parameters:
+        - $ref: '#/components/parameters/RatingKey'
+        - $ref: '#/components/parameters/Language'
+        - $ref: '#/components/parameters/LanguageQuery'
+        - $ref: '#/components/parameters/Country'
+        - $ref: '#/components/parameters/CountryQuery'
+        - $ref: '#/components/parameters/ContainerStart'
+        - $ref: '#/components/parameters/ContainerStartQuery'
+        - $ref: '#/components/parameters/ContainerSize'
+        - $ref: '#/components/parameters/ContainerSizeQuery'
+        - $ref: '#/components/parameters/EpisodeOrder'
+        - $ref: '#/components/parameters/IncludeFields'
+        - $ref: '#/components/parameters/ExcludeFields'
+        - $ref: '#/components/parameters/IncludeElements'
+        - $ref: '#/components/parameters/ExcludeElements'
+      responses:
+        '200':
+          description: A page of child metadata items.
+          headers:
+            X-Plex-Container-Start:
+              $ref: '#/components/headers/ContainerStart'
+            X-Plex-Container-Total-Size:
+              $ref: '#/components/headers/ContainerTotalSize'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /library/metadata/{ratingKey}/grandchildren:
+    get:
+      tags:
+        - Metadata
+      operationId: getMetadataGrandchildren
+      summary: Get the grandchildren of a metadata item
+      description: |
+        Returns the grandchildren of a show (episodes grouped under each
+        season) as a metadata container. As with `/children`, paging must be
+        supported and an unpaged request should return at most the first 20
+        items.
+      parameters:
+        - $ref: '#/components/parameters/RatingKey'
+        - $ref: '#/components/parameters/Language'
+        - $ref: '#/components/parameters/LanguageQuery'
+        - $ref: '#/components/parameters/Country'
+        - $ref: '#/components/parameters/CountryQuery'
+        - $ref: '#/components/parameters/ContainerStart'
+        - $ref: '#/components/parameters/ContainerStartQuery'
+        - $ref: '#/components/parameters/ContainerSize'
+        - $ref: '#/components/parameters/ContainerSizeQuery'
+        - $ref: '#/components/parameters/EpisodeOrder'
+        - $ref: '#/components/parameters/IncludeFields'
+        - $ref: '#/components/parameters/ExcludeFields'
+        - $ref: '#/components/parameters/IncludeElements'
+        - $ref: '#/components/parameters/ExcludeElements'
+      responses:
+        '200':
+          description: A page of grandchild metadata items.
+          headers:
+            X-Plex-Container-Start:
+              $ref: '#/components/headers/ContainerStart'
+            X-Plex-Container-Total-Size:
+              $ref: '#/components/headers/ContainerTotalSize'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /library/metadata/{ratingKey}/images:
+    get:
+      tags:
+        - Metadata
+      operationId: getMetadataImages
+      summary: Get all image assets for an item
+      description: |
+        Recommended (but not required) companion to the metadata feature.
+        Returns an `Image` array with every available image asset for the item.
+      parameters:
+        - $ref: '#/components/parameters/RatingKey'
+        - $ref: '#/components/parameters/Language'
+        - $ref: '#/components/parameters/LanguageQuery'
+        - $ref: '#/components/parameters/Country'
+        - $ref: '#/components/parameters/CountryQuery'
+      responses:
+        '200':
+          description: A container with the available image assets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+              examples:
+                images:
+                  value:
+                    MediaContainer:
+                      offset: 0
+                      totalSize: 3
+                      identifier: tv.plex.provider.metadata
+                      size: 3
+                      Image:
+                        - type: coverPoster
+                          url: https://image.tmdb.org/t/p/original/qk3eQ8jW4opJ48gFWYUXWaMT4l.jpg
+                        - type: background
+                          url: https://image.tmdb.org/t/p/original/3uE9SUywNbj1qSAuYCGgbTTYku5.jpg
+                        - type: clearLogo
+                          url: https://image.tmdb.org/t/p/original/rIi0lY2UftYuKDJ4OlIefDdijve.png
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /library/metadata/matches:
+    post:
+      tags:
+        - Match
+      operationId: matchMetadata
+      summary: Find metadata matches for a local item
+      description: |
+        Takes contextual hints about a local movie, show, season, or episode
+        and returns the best match by default. When `manual=1`, return an array
+        of the best matches ordered from highest to lowest confidence.
+        This endpoint is located at the path advertised by the `match` feature.
+      parameters:
+        - $ref: '#/components/parameters/Language'
+        - $ref: '#/components/parameters/LanguageQuery'
+        - $ref: '#/components/parameters/Country'
+        - $ref: '#/components/parameters/CountryQuery'
+        - $ref: '#/components/parameters/ContainerStart'
+        - $ref: '#/components/parameters/ContainerStartQuery'
+        - $ref: '#/components/parameters/ContainerSize'
+        - $ref: '#/components/parameters/ContainerSizeQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchRequest'
+            examples:
+              season:
+                summary: Match an Adventure Time season
+                value:
+                  parentTitle: Adventure Time
+                  type: 3
+                  index: 8
+                  filename: TV Shows/Adventure Time/Adventure Time S08E01.mp4
+                  includeElements: Metadata,Children
+                  includeFields: guid,parentGuid,title,parentTitle,thumb,parentThumb,index,originallyAvailableAt,year,type
+                  includeChildren: 1
+      responses:
+        '200':
+          description: A metadata container with the matched item or items.
+          headers:
+            X-Plex-Container-Start:
+              $ref: '#/components/headers/ContainerStart'
+            X-Plex-Container-Total-Size:
+              $ref: '#/components/headers/ContainerTotalSize'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchResultResponse'
+              examples:
+                season:
+                  value:
+                    MediaContainer:
+                      offset: 0
+                      totalSize: 1
+                      identifier: tv.plex.provider.metadata
+                      size: 1
+                      Metadata:
+                        - guid: plex://season/5d9c0939e9d5a1001f4def89
+                          type: season
+                          thumb: https://image.tmdb.org/t/p/original/zIDoU6YZXE3oz9MNBjE2Ld94Xuu.jpg
+                          title: Season 8
+                          parentTitle: Adventure Time
+                          parentThumb: https://image.tmdb.org/t/p/original/qk3eQ8jW4opJ48gFWYUXWaMT4l.jpg
+                          parentGuid: plex://show/5d9c07f72df347001e3a70b4
+                          index: 8
+                          originallyAvailableAt: '2016-03-26'
+                          year: 2016
+                          Children:
+                            size: 2
+                            Metadata:
+                              - guid: plex://episode/5eeb4fc1d39938003f7753c0
+                                type: episode
+                                thumb: https://image.tmdb.org/t/p/original/3WXclCno2MYKhdnUidQVsPSpolk.jpg
+                                title: Broke His Crown
+                                parentTitle: Season 8
+                                parentThumb: https://image.tmdb.org/t/p/original/zIDoU6YZXE3oz9MNBjE2Ld94Xuu.jpg
+                                parentGuid: plex://season/5d9c0939e9d5a1001f4def89
+                                index: 1
+                                originallyAvailableAt: '2016-03-26'
+                                year: 2016
+                              - guid: plex://episode/5eeb4fc1d39938003f7753be
+                                type: episode
+                                thumb: https://image.tmdb.org/t/p/original/mhhq4BXNmnZZfzfqsBvZwMvcngt.jpg
+                                title: Don't Look
+                                parentTitle: Season 8
+                                parentThumb: https://image.tmdb.org/t/p/original/zIDoU6YZXE3oz9MNBjE2Ld94Xuu.jpg
+                                parentGuid: plex://season/5d9c0939e9d5a1001f4def89
+                                index: 2
+                                originallyAvailableAt: '2016-04-02'
+                                year: 2016
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+components:
+  parameters:
+    RatingKey:
+      name: ratingKey
+      in: path
+      required: true
+      description: The provider-specific identifier of the metadata item.
+      schema:
+        type: string
+        pattern: '^[a-zA-Z0-9_-]+$'
+      example: tmdb-movie-123
+    Language:
+      name: X-Plex-Language
+      in: header
+      description: |
+        IETF language tag including the region subtag, used for localization.
+        May also be passed as a query parameter.
+      schema:
+        type: string
+        examples:
+          - en-US
+          - de-DE
+    Country:
+      name: X-Plex-Country
+      in: header
+      description: |
+        ISO 3166 two-letter country code, used for certifications and
+        country-specific release dates. May also be passed as a query
+        parameter.
+      schema:
+        type: string
+        pattern: '^[A-Za-z]{2}$'
+      example: US
+    ContainerStart:
+      name: X-Plex-Container-Start
+      in: header
+      description: |
+        Starting index for a paged response. Providers must support this on
+        paged requests, and it is mandatory for `/children` and
+        `/grandchildren`.
+      schema:
+        type: integer
+        minimum: 0
+      example: 0
+    ContainerSize:
+      name: X-Plex-Container-Size
+      in: header
+      description: |
+        Maximum number of items in a single paged response. When omitted for
+        `/children` and `/grandchildren`, providers should return at most 20
+        items.
+      schema:
+        type: integer
+        minimum: 0
+      example: 20
+    LanguageQuery:
+      name: X-Plex-Language
+      in: query
+      description: Query-string form of the `X-Plex-Language` header.
+      schema:
+        type: string
+        examples:
+          - en-US
+          - de-DE
+    CountryQuery:
+      name: X-Plex-Country
+      in: query
+      description: Query-string form of the `X-Plex-Country` header.
+      schema:
+        type: string
+        pattern: '^[A-Za-z]{2}$'
+      example: US
+    ContainerStartQuery:
+      name: X-Plex-Container-Start
+      in: query
+      description: Query-string form of the `X-Plex-Container-Start` header.
+      schema:
+        type: integer
+        minimum: 0
+      example: 0
+    ContainerSizeQuery:
+      name: X-Plex-Container-Size
+      in: query
+      description: Query-string form of the `X-Plex-Container-Size` header.
+      schema:
+        type: integer
+        minimum: 0
+      example: 20
+    IncludeChildren:
+      name: includeChildren
+      in: query
+      description: |
+        When `1`, include a `Children` object for items that have direct
+        children. Must be supported for TV shows and seasons.
+      schema:
+        type: integer
+        enum: [0, 1]
+        default: 0
+    EpisodeOrder:
+      name: episodeOrder
+      in: query
+      description: |
+        Identifier of a requested `SeasonType` ordering. When no seasons exist
+        for this ordering, no season data should be returned.
+      schema:
+        type: string
+      example: tmdbAiring
+    IncludeFields:
+      name: includeFields
+      in: query
+      description: Comma-separated list of the only fields to include in the response.
+      schema:
+        type: string
+      example: guid,title,year,type
+    ExcludeFields:
+      name: excludeFields
+      in: query
+      description: Comma-separated list of fields to omit from the response.
+      schema:
+        type: string
+      example: summary,tagline
+    IncludeElements:
+      name: includeElements
+      in: query
+      description: Comma-separated list of the only child elements to include in the response.
+      schema:
+        type: string
+      example: Metadata,Children
+    ExcludeElements:
+      name: excludeElements
+      in: query
+      description: Comma-separated list of child elements to omit from the response.
+      schema:
+        type: string
+      example: Media
+    IncludeOptionalFields:
+      name: includeOptionalFields
+      in: query
+      description: Comma-separated list of normally omitted fields to include in the response.
+      schema:
+        type: string
+    IncludeOptionalElements:
+      name: includeOptionalElements
+      in: query
+      description: Comma-separated list of normally omitted elements to include in the response.
+      schema:
+        type: string
+      example: musicAnalysis
+  headers:
+    ContainerStart:
+      description: Offset of the first item in the returned page.
+      schema:
+        type: integer
+        minimum: 0
+      example: 2
+    ContainerTotalSize:
+      description: Total number of items in the collection, when known.
+      schema:
+        type: integer
+        minimum: 0
+      example: 5
+  responses:
+    BadRequest:
+      description: The request was malformed or cannot be fulfilled.
+    NotFound:
+      description: No metadata item exists for the requested rating key.
+    InternalServerError:
+      description: The provider encountered an internal error.
+  schemas:
+    MediaProviderResponse:
+      type: object
+      description: Root response of a metadata provider.
+      required:
+        - MediaProvider
+      properties:
+        MediaProvider:
+          $ref: '#/components/schemas/MediaProvider'
+    MediaProvider:
+      type: object
+      description: Describes a provider's identity, supported types, and feature paths.
+      required:
+        - identifier
+        - title
+        - Types
+        - Feature
+      properties:
+        identifier:
+          type: string
+          pattern: '^tv\.plex\.agents\.custom\.[a-zA-Z0-9.]+$'
+          description: |
+            Unique provider identifier. Custom providers must use the
+            `tv.plex.agents.custom.` prefix followed by ASCII letters, numbers,
+            and periods. The same identifier is used as the GUID scheme.
+          example: tv.plex.agents.custom.johnz.tmdb
+        title:
+          type: string
+          description: Human-readable title of the provider.
+          example: John Z's TV Show Provider
+        version:
+          type: string
+          description: Version of the API implemented by the provider.
+          example: '1.0.0'
+        Types:
+          type: array
+          minItems: 1
+          description: |
+            Metadata types supported by this provider. When TV shows are
+            supported, types 2 (show), 3 (season), and 4 (episode) must all be
+            declared. Supporting a single parent type per provider is
+            recommended so providers can be combined in Plex.
+          items:
+            $ref: '#/components/schemas/SupportedType'
+        Feature:
+          type: array
+          minItems: 1
+          description: |
+            Features exposed by the provider. The `metadata` and `match`
+            features are required for a metadata provider; the value of each
+            `key` defines the endpoint path used for that feature. Other media
+            provider features may also be advertised.
+          items:
+            $ref: '#/components/schemas/Feature'
+      allOf:
+        - properties:
+            Feature:
+              contains:
+                type: object
+                required:
+                  - type
+                properties:
+                  type:
+                    const: metadata
+        - properties:
+            Feature:
+              contains:
+                type: object
+                required:
+                  - type
+                properties:
+                  type:
+                    const: match
+        - if:
+            properties:
+              Types:
+                contains:
+                  type: object
+                  required:
+                    - type
+                  properties:
+                    type:
+                      const: 2
+          then:
+            properties:
+              Types:
+                allOf:
+                  - contains:
+                      type: object
+                      required:
+                        - type
+                      properties:
+                        type:
+                          const: 3
+                  - contains:
+                      type: object
+                      required:
+                        - type
+                      properties:
+                        type:
+                          const: 4
+    SupportedType:
+      type: object
+      description: A metadata type supported by the provider and its GUID schemes.
+      required:
+        - type
+        - Scheme
+      properties:
+        type:
+          $ref: '#/components/schemas/MetadataTypeNumber'
+        Scheme:
+          type: array
+          minItems: 1
+          description: GUID schemes used by items of this type.
+          items:
+            $ref: '#/components/schemas/Scheme'
+    Scheme:
+      type: object
+      required:
+        - scheme
+      properties:
+        scheme:
+          type: string
+          description: GUID scheme prefix; should be identical to the provider identifier.
+          example: tv.plex.agents.custom.johnz.tmdb
+    Feature:
+      type: object
+      description: A provider feature and the path at which it is implemented.
+      required:
+        - type
+        - key
+      properties:
+        type:
+          type: string
+          examples:
+            - metadata
+            - match
+          description: |
+            Feature type. `metadata` retrieves an item by rating key;
+            `match` finds catalog matches from contextual hints.
+        key:
+          type: string
+          description: API endpoint path for this feature.
+          examples:
+            - /library/metadata
+            - /library/metadata/matches
+    MetadataTypeNumber:
+      type: integer
+      enum: [1, 2, 3, 4]
+      description: 'Numeric metadata type: 1 = movie, 2 = show, 3 = season, 4 = episode.'
+    MetadataType:
+      type: string
+      enum: [movie, show, season, episode]
+      description: String representation of the metadata type used in GUIDs and responses.
+    MetadataResponse:
+      type: object
+      description: Plex response wrapper for metadata operations.
+      required:
+        - MediaContainer
+      properties:
+        MediaContainer:
+          $ref: '#/components/schemas/MetadataContainer'
+    MatchResultResponse:
+      type: object
+      description: Plex response wrapper for match results.
+      required:
+        - MediaContainer
+      properties:
+        MediaContainer:
+          $ref: '#/components/schemas/MatchResultContainer'
+    ImageResponse:
+      type: object
+      description: Plex response wrapper for image asset lists.
+      required:
+        - MediaContainer
+      properties:
+        MediaContainer:
+          $ref: '#/components/schemas/ImageContainer'
+    MetadataContainer:
+      allOf:
+        - $ref: '#/components/schemas/MediaContainerBase'
+        - type: object
+          required:
+            - Metadata
+          properties:
+            Metadata:
+              type: array
+              description: Metadata items returned for this request.
+              items:
+                $ref: '#/components/schemas/MetadataItem'
+    MatchResultContainer:
+      allOf:
+        - $ref: '#/components/schemas/MediaContainerBase'
+        - type: object
+          required:
+            - Metadata
+          properties:
+            Metadata:
+              type: array
+              description: |
+                Matched items. Response customization may reduce these objects
+                to only the attributes the caller asked for.
+              items:
+                $ref: '#/components/schemas/MatchResultItem'
+    ImageContainer:
+      allOf:
+        - $ref: '#/components/schemas/MediaContainerBase'
+        - type: object
+          required:
+            - Image
+          properties:
+            Image:
+              type: array
+              description: All image assets available for the requested item.
+              items:
+                $ref: '#/components/schemas/Image'
+    MediaContainerBase:
+      type: object
+      description: Root object wrapping metadata or image arrays and paging information.
+      required:
+        - offset
+        - identifier
+        - size
+      properties:
+        offset:
+          type: integer
+          minimum: 0
+          description: Position of the first returned item; always 0 for a single item.
+        totalSize:
+          type: integer
+          minimum: 0
+          description: |
+            Total number of items in the collection, when known; always 1 for a
+            single item. Optional but typically present.
+        identifier:
+          type: string
+          description: Identifier of the provider producing the response.
+          example: tv.plex.provider.metadata
+        size:
+          type: integer
+          minimum: 0
+          description: Number of items in this response; always 1 for a single item.
+    MetadataItem:
+      description: A movie, show, season, or episode metadata object.
+      oneOf:
+        - $ref: '#/components/schemas/MovieMetadata'
+        - $ref: '#/components/schemas/ShowMetadata'
+        - $ref: '#/components/schemas/SeasonMetadata'
+        - $ref: '#/components/schemas/EpisodeMetadata'
+    MovieMetadata:
+      allOf:
+        - $ref: '#/components/schemas/MetadataBase'
+        - type: object
+          properties:
+            type:
+              const: movie
+    ShowMetadata:
+      allOf:
+        - $ref: '#/components/schemas/MetadataBase'
+        - type: object
+          properties:
+            type:
+              const: show
+            Children:
+              $ref: '#/components/schemas/Children'
+    SeasonMetadata:
+      allOf:
+        - $ref: '#/components/schemas/MetadataBase'
+        - $ref: '#/components/schemas/ParentAttributes'
+        - type: object
+          properties:
+            type:
+              const: season
+            Children:
+              $ref: '#/components/schemas/Children'
+    EpisodeMetadata:
+      allOf:
+        - $ref: '#/components/schemas/MetadataBase'
+        - $ref: '#/components/schemas/ParentAttributes'
+        - $ref: '#/components/schemas/GrandparentAttributes'
+        - type: object
+          required:
+            - parentIndex
+          properties:
+            type:
+              const: episode
+            parentIndex:
+              type: integer
+              description: Season number containing this episode.
+    MetadataFields:
+      type: object
+      description: Attributes available on supported metadata objects.
+      properties:
+        ratingKey:
+          type: string
+          pattern: '^[a-zA-Z0-9_-]+$'
+          description: Unique identifier for this item within the provider.
+          example: tmdb-movie-123
+        key:
+          type: string
+          description: API path used to retrieve this metadata item.
+          example: /library/metadata/tmdb-movie-123
+        guid:
+          type: string
+          description: |
+            Globally unique identifier in `{scheme}://{metadataType}/{ratingKey}`
+            form, with a scheme matching the provider identifier.
+          example: tv.plex.agents.custom.johnz.tmdb://movie/tmdb-movie-123
+        type:
+          $ref: '#/components/schemas/MetadataType'
+        title:
+          type: string
+          example: Back to the Future
+        originallyAvailableAt:
+          type: string
+          format: date
+          description: Original release date in ISO 8601 format (YYYY-MM-DD).
+          example: '1985-07-03'
+        thumb:
+          type: string
+          format: uri
+          description: Publicly accessible URL of the default poster or thumbnail.
+        art:
+          type: string
+          format: uri
+          description: Publicly accessible URL of the default background artwork.
+        contentRating:
+          type: string
+          description: |
+            Age rating, such as `PG` or `R`. For non-US ratings, prepend the
+            two-letter country code and a slash, for example `za/15`.
+          example: PG
+        originalTitle:
+          type: string
+          description: Title in the original language when the request asks for another language.
+        titleSort:
+          type: string
+          description: Alternate value to use when sorting by title.
+        year:
+          type: integer
+          description: Release year.
+          example: 1985
+        summary:
+          type: string
+          description: Full plot synopsis.
+        isAdult:
+          type: boolean
+          description: Set to true for explicit or adult content.
+        duration:
+          type: integer
+          description: Runtime in milliseconds (movie, show, and episode).
+        tagline:
+          type: string
+          description: Tagline or promotional text (movie and show).
+        studio:
+          type: string
+          description: Primary production studio (movie and show).
+        theme:
+          type: string
+          format: uri
+          description: |
+            Publicly accessible URL of an MP3 theme snippet, preferably no
+            longer than about 30 seconds (movie and show).
+        Image:
+          type: array
+          description: |
+            All available image assets. Supplying at least `coverPoster` (or
+            `snapshot` for an episode) and `background` is highly recommended.
+          items:
+            $ref: '#/components/schemas/Image'
+        OriginalImage:
+          type: array
+          description: Images in the content's original language.
+          items:
+            $ref: '#/components/schemas/Image'
+        Genre:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreTag'
+        Guid:
+          type: array
+          description: External identifier mappings used to improve matching.
+          items:
+            $ref: '#/components/schemas/ExternalGuid'
+        Country:
+          type: array
+          description: Production countries.
+          items:
+            $ref: '#/components/schemas/Tag'
+        Role:
+          type: array
+          description: Cast members and their characters.
+          items:
+            $ref: '#/components/schemas/Person'
+        Director:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+        Producer:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+        Writer:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+        Similar:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimilarItem'
+        Studio:
+          type: array
+          description: Production studios and companies.
+          items:
+            $ref: '#/components/schemas/Tag'
+        Rating:
+          type: array
+          items:
+            $ref: '#/components/schemas/Rating'
+        Network:
+          type: array
+          description: Television networks the show originally aired on.
+          items:
+            $ref: '#/components/schemas/Tag'
+        SeasonType:
+          type: array
+          description: Available episode orderings for a show.
+          items:
+            $ref: '#/components/schemas/SeasonType'
+    MetadataBase:
+      allOf:
+        - $ref: '#/components/schemas/MetadataFields'
+        - type: object
+          required:
+            - ratingKey
+            - key
+            - guid
+            - type
+            - title
+            - originallyAvailableAt
+    MatchResultItem:
+      description: |
+        A metadata item returned by the match feature. Fields that are
+        required for a full metadata object may be absent when response
+        customization is used.
+      allOf:
+        - $ref: '#/components/schemas/MetadataFields'
+        - $ref: '#/components/schemas/ParentFields'
+        - $ref: '#/components/schemas/GrandparentFields'
+        - type: object
+          required:
+            - type
+          properties:
+            Children:
+              $ref: '#/components/schemas/MatchResultChildren'
+    MatchResultChildren:
+      type: object
+      description: Simplified child container used for reduced match results.
+      required:
+        - size
+        - Metadata
+      properties:
+        size:
+          type: integer
+          minimum: 0
+        Metadata:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchResultItem'
+    ParentFields:
+      type: object
+      description: Parent-item attributes present on seasons and episodes, including reduced match results.
+      properties:
+        parentRatingKey:
+          type: string
+          description: Identifier of the parent item in Plex.
+        parentKey:
+          type: string
+          description: API path of the parent metadata item.
+        parentGuid:
+          type: string
+          description: Plex-compatible GUID of the parent item.
+        parentType:
+          type: string
+          enum: [show, season]
+          description: Content type of the parent (show for a season, season for an episode).
+        parentTitle:
+          type: string
+          description: Title of the parent item.
+        parentThumb:
+          type: string
+          format: uri
+          description: Publicly accessible URL of the parent's poster or thumbnail.
+        parentArt:
+          type: string
+          format: uri
+          description: Publicly accessible URL of the parent's background artwork.
+        index:
+          type: integer
+          description: Season number for a season, episode number for an episode.
+    ParentAttributes:
+      allOf:
+        - $ref: '#/components/schemas/ParentFields'
+        - type: object
+          description: Parent attributes required on full season and episode objects.
+          required:
+            - parentRatingKey
+            - parentKey
+            - parentGuid
+            - parentType
+            - parentTitle
+            - index
+    GrandparentFields:
+      type: object
+      description: Grandparent TV show attributes present on episodes, including reduced match results.
+      properties:
+        grandparentRatingKey:
+          type: string
+          description: Identifier of the TV show in Plex.
+        grandparentKey:
+          type: string
+          description: API path of the TV show metadata item.
+        grandparentGuid:
+          type: string
+          description: Plex-compatible GUID of the TV show.
+        grandparentType:
+          const: show
+        grandparentTitle:
+          type: string
+          description: Title of the TV show.
+        grandparentThumb:
+          type: string
+          format: uri
+          description: Publicly accessible URL of the show's poster or thumbnail.
+        grandparentArt:
+          type: string
+          format: uri
+          description: Publicly accessible URL of the show's background artwork.
+    GrandparentAttributes:
+      allOf:
+        - $ref: '#/components/schemas/GrandparentFields'
+        - type: object
+          description: Grandparent attributes required on full episode objects.
+          required:
+            - grandparentRatingKey
+            - grandparentKey
+            - grandparentGuid
+            - grandparentType
+            - grandparentTitle
+    Children:
+      type: object
+      description: |
+        Simplified metadata container nested inside an item. Required for TV
+        shows and seasons when `includeChildren=1` is requested; all child
+        objects should be returned.
+      required:
+        - size
+        - Metadata
+      properties:
+        size:
+          type: integer
+          minimum: 0
+          description: Number of child metadata items.
+        Metadata:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetadataItem'
+    Image:
+      type: object
+      required:
+        - type
+        - url
+      properties:
+        type:
+          type: string
+          enum:
+            - background
+            - backgroundSquare
+            - clearLogo
+            - coverPoster
+            - snapshot
+          description: Asset type; use `snapshot` for episode stills.
+        url:
+          type: string
+          format: uri
+          description: Full URL of the image asset.
+        alt:
+          type: string
+          description: Alt text for accessibility, typically the item title.
+    Tag:
+      type: object
+      description: A named value such as a country, studio, or network.
+      required:
+        - tag
+      properties:
+        tag:
+          type: string
+          description: Display name.
+          example: Adventure
+    GenreTag:
+      allOf:
+        - $ref: '#/components/schemas/Tag'
+        - type: object
+          properties:
+            originalTag:
+              type: string
+              description: Genre name in the original language when the request uses another language.
+    ExternalGuid:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: External ID in `provider://id` form, for example `imdb://tt0088763`.
+          example: tmdb://105
+    Person:
+      type: object
+      description: A cast or crew member; common to Role, Director, Producer, and Writer arrays.
+      required:
+        - tag
+      properties:
+        tag:
+          type: string
+          description: Person's full name.
+        thumb:
+          type: string
+          format: uri
+          description: URL of the person's photo.
+        role:
+          type: string
+          description: Character name or role description.
+        order:
+          type: integer
+          description: Display order in the cast list.
+    SimilarItem:
+      type: object
+      required:
+        - guid
+      properties:
+        guid:
+          type: string
+          description: GUID of the similar title.
+        tag:
+          type: string
+          description: Title of the similar item.
+    Rating:
+      type: object
+      required:
+        - image
+        - type
+        - value
+      properties:
+        image:
+          type: string
+          enum:
+            - imdb://image.rating
+            - themoviedb://image.rating
+            - rottentomatoes://image.rating.ripe
+            - rottentomatoes://image.rating.upright
+          description: Built-in identifier of the rating badge to display.
+        type:
+          type: string
+          enum: [audience, critic]
+          description: Audience or critic rating.
+        value:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: Rating value between 0 and 10.
+    SeasonType:
+      type: object
+      description: An available episode ordering for a TV show.
+      required:
+        - id
+        - source
+        - tag
+        - title
+      properties:
+        id:
+          type: string
+          description: ASCII identifier used as the `episodeOrder` query value.
+          example: tmdbAiring
+        source:
+          type: string
+          description: Source of the ordering data.
+          example: tmdb
+        tag:
+          type: string
+          description: Short descriptor, such as `Aired` or `DVD`.
+        title:
+          type: string
+          description: Full description shown in the Plex UI.
+    MatchRequest:
+      type: object
+      description: |
+        Contextual hints used to find matching metadata. Required attributes
+        depend on the requested `type`: `title` for movies and shows,
+        `parentTitle` for seasons, `grandparentTitle` for episodes, and either
+        `index` plus `parentIndex` or `date` for episodes.
+      required:
+        - type
+      properties:
+        type:
+          $ref: '#/components/schemas/MetadataTypeNumber'
+        title:
+          type: string
+          description: Title of the movie or TV show.
+        parentTitle:
+          type: string
+          description: Title of the TV show (seasons only).
+        grandparentTitle:
+          type: string
+          description: Title of the TV show (episodes only).
+        year:
+          type: integer
+          description: Release year of the item.
+        guid:
+          type: string
+          description: External ID that can help matching precisely, for example `tvdb://12345`.
+        index:
+          type: integer
+          description: Season number for a season, episode number for an episode.
+        parentIndex:
+          type: integer
+          description: Season number for an episode.
+        filename:
+          type: string
+          description: Relative path of the underlying media file.
+          example: TV Shows/Adventure Time/Adventure Time S08E01.mp4
+        date:
+          type: string
+          format: date
+          description: Air date of an episode when `index` and `parentIndex` are unavailable.
+        includeChildren:
+          type: integer
+          enum: [0, 1]
+          default: 0
+          description: Include a `Children` object for shows and seasons.
+        episodeOrder:
+          type: string
+          description: Identifier of the requested `SeasonType` ordering.
+        manual:
+          type: integer
+          enum: [0, 1]
+          default: 0
+          description: When 1, return an array of the best matches ordered by highest to lowest confidence instead of only the best match.
+        includeAdult:
+          type: integer
+          enum: [0, 1]
+          default: 0
+          description: When 1, include explicit or adult content.
+        includeFields:
+          type: string
+          description: Comma-separated list of the only fields to return.
+        excludeFields:
+          type: string
+          description: Comma-separated list of fields to omit.
+        includeElements:
+          type: string
+          description: Comma-separated list of the only elements to return.
+        excludeElements:
+          type: string
+          description: Comma-separated list of elements to omit.
+        includeOptionalFields:
+          type: string
+          description: Comma-separated list of normally omitted fields to include.
+        includeOptionalElements:
+          type: string
+          description: Comma-separated list of normally omitted elements to include.
+      allOf:
+        - if:
+            properties:
+              type:
+                const: 1
+          then:
+            required:
+              - title
+        - if:
+            properties:
+              type:
+                const: 2
+          then:
+            required:
+              - title
+              - includeChildren
+        - if:
+            properties:
+              type:
+                const: 3
+          then:
+            required:
+              - parentTitle
+              - index
+              - includeChildren
+        - if:
+            properties:
+              type:
+                const: 4
+          then:
+            required:
+              - grandparentTitle
+            anyOf:
+              - required:
+                  - index
+                  - parentIndex
+              - required:
+                  - date
