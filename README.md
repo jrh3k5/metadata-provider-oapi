@@ -57,3 +57,9 @@ schemas. Common tooling can be used to lint or render it, for example:
 ```sh
 npx @redocly/cli lint openapi.yaml
 ```
+
+## License
+
+Apache License 2.0. See `LICENSE` and `NOTICE`. The Plex API description this
+spec is derived from declares the same license; use of Plex's services remains
+governed by Plex's Terms of Service.

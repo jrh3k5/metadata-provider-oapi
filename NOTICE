@@ -1,0 +1,11 @@
+Plex Metadata Provider OpenAPI specification
+============================================
+
+This project includes an OpenAPI specification derived from the Plex Media
+Server API description published by Plex at https://developer.plex.tv/pms/.
+That description declares its license as Apache License, Version 2.0:
+
+    https://www.apache.org/licenses/LICENSE-2.0.html
+
+Plex and Plex Media Server are trademarks of Plex, Inc. This project is not
+affiliated with or endorsed by Plex.
